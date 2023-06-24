@@ -1,7 +1,9 @@
 import torchvision
-import torch
-import numpy as np
 import torchvision.transforms as transforms
+import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+import numpy as np
 import tqdm
 import argparse
 import os
@@ -11,16 +13,14 @@ def save_images(transform, transform_name, data_path, dir_name):
     fulltrainset = torchvision.datasets.MNIST(
         root=data_path, train=True, download=True, transform=transform
     )
-    trainloader = torch.utils.data.DataLoader(
+    trainloader = DataLoader(
         fulltrainset, batch_size=2000, shuffle=False, pin_memory=True
     )
 
     test_set = torchvision.datasets.MNIST(
         root=data_path, train=False, download=True, transform=transform
     )
-    testloader = torch.utils.data.DataLoader(
-        test_set, batch_size=2000, shuffle=False, pin_memory=True
-    )
+    testloader = DataLoader(test_set, batch_size=2000, shuffle=False, pin_memory=True)
 
     color_data_x, color_data_y = gen_fgbgcolor_data(
         trainloader, img_size=(3, 28, 28), cpr=args.cpr, noise=10.0
@@ -123,8 +123,9 @@ def gen_fgbgcolor_data(loader, img_size=(3, 28, 28), cpr=[0.5, 0.5], noise=10.0)
         )
         x_rgb = torch.clamp(x_rgb, 0.0, 255.0)
 
+        targets = F.one_hot(targets)
         targets = torch.cat(
-            (torch.unsqueeze(targets, dim=1), torch.squeeze(c_bg), torch.squeeze(c_fg)),
+            (targets, torch.squeeze(c_bg), torch.squeeze(c_fg)),
             dim=1,
         )
         targets = targets.numpy()
@@ -142,8 +143,6 @@ def gen_fgbgcolor_data(loader, img_size=(3, 28, 28), cpr=[0.5, 0.5], noise=10.0)
 
 
 if "__main__" == __name__:
-    data_path = "mnist/"
-
     np.random.seed(0)
     torch.manual_seed(0)
 
@@ -170,16 +169,17 @@ if "__main__" == __name__:
 
     nb_classes = 10
 
+    data_path = "mnist/"
     dir_name = (
-        data_path
-        + "cmnist/"
+        os.getcwd()
+        + "/cmnist/"
         + "fgbg_cmnist_cpr"
         + "-".join(str(p) for p in args.cpr)
         + "/"
     )
     print(dir_name)
     if not os.path.exists(dir_name):
-        os.mkdir(dir_name)
+        os.makedirs(dir_name)
 
     save_images(vanilla_transform, "init", data_path, dir_name)
     # save_images(so2_transform, "so2", data_path, dir_name)

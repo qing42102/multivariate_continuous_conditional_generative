@@ -1,5 +1,4 @@
 import torch
-import numpy as np
 import torch.nn as nn
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -8,30 +7,28 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 class Encoder(nn.Module):
     def __init__(self, shape, latent_dim=16, conditional_dim=0):
         super(Encoder, self).__init__()
-        c, h, w = shape
 
-        self.latent_dim = latent_dim
-        self.conditional_dim = conditional_dim
+        c, h, w = shape
         self.encode = nn.Sequential(
-            nn.Conv2d(c, 16, kernel_size=3, padding=0),
+            nn.Conv2d(c, 16, kernel_size=3, stride=1),
             nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=3, padding=0),
+            nn.Conv2d(16, 32, kernel_size=3, stride=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
-            nn.Conv2d(32, 64, kernel_size=3, padding=0),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, padding=0),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
             nn.Flatten(start_dim=1),
         )
 
-        self.calc_mean = nn.Linear(1024 + conditional_dim, self.latent_dim)
-        self.calc_logvar = nn.Linear(1024 + conditional_dim, self.latent_dim)
+        self.calc_mean = nn.Linear(1024 + conditional_dim, latent_dim)
+        self.calc_logvar = nn.Linear(1024 + conditional_dim, latent_dim)
 
     def forward(self, x, y=None):
         z = self.encode(x)
@@ -50,8 +47,8 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, shape, latent_dim=16, conditional_dim=0):
         super(Decoder, self).__init__()
+
         c, w, h = shape
-        self.shape = shape
         self.decode = nn.Sequential(
             nn.Unflatten(dim=1, unflattened_size=(64, 4, 4)),
             nn.Upsample(size=8),
@@ -62,16 +59,15 @@ class Decoder(nn.Module):
             nn.Upsample(size=24),
             nn.ConvTranspose2d(32, 16, kernel_size=3, stride=1),
             nn.ReLU(),
-            nn.ConvTranspose2d(16, 3, kernel_size=3, stride=1),
+            nn.ConvTranspose2d(16, c, kernel_size=3, stride=1),
             nn.Sigmoid(),
         )
 
         self.decoder_lin = nn.Sequential(
-            nn.Linear(latent_dim + conditional_dim, 1024), nn.ReLU(True)
+            nn.Linear(latent_dim + conditional_dim, 1024), nn.ReLU()
         )
 
     def forward(self, z, y=None):
-        c, w, h = self.shape
         if y is None:
             input = z
         else:
@@ -79,7 +75,6 @@ class Decoder(nn.Module):
 
         input = self.decoder_lin(input)
         image = self.decode(input)
-        image = image.view(-1, c, w, h)
 
         return image
 
@@ -87,9 +82,10 @@ class Decoder(nn.Module):
 class conditional_VAE(nn.Module):
     def __init__(self, shape, latent_dim=16, conditional_dim=0):
         super(conditional_VAE, self).__init__()
+
         self.latent_dim = latent_dim
-        self.encoder = Encoder(shape, latent_dim, conditional_dim=conditional_dim)
-        self.decoder = Decoder(shape, latent_dim, conditional_dim=conditional_dim)
+        self.encoder = Encoder(shape, latent_dim, conditional_dim)
+        self.decoder = Decoder(shape, latent_dim, conditional_dim)
 
     def sampling(self, mean, logvar):
         eps = torch.randn(mean.shape).to(device)
