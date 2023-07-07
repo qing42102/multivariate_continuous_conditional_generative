@@ -25,7 +25,7 @@ class WGAN(keras.Model):
         self.d_loss_fn = d_loss_fn
         self.g_loss_fn = g_loss_fn
 
-    def gradient_penalty(self, batch_size, real_images, fake_images):
+    def gradient_penalty(self, batch_size, real_images, fake_images, labels):
         """Calculates the gradient penalty.
 
         This loss is calculated on an interpolated image
@@ -39,7 +39,7 @@ class WGAN(keras.Model):
         with tf.GradientTape() as gp_tape:
             gp_tape.watch(interpolated)
             # 1. Get the discriminator output for this interpolated image.
-            pred = self.discriminator(interpolated, training=True)
+            pred = self.discriminator(interpolated, labels, training=True)
 
         # 2. Calculate the gradients w.r.t to this interpolated image.
         grads = gp_tape.gradient(pred, [interpolated])[0]
@@ -48,9 +48,8 @@ class WGAN(keras.Model):
         gp = tf.reduce_mean((norm - 1.0) ** 2)
         return gp
 
-    def train_step(self, real_images):
-        if isinstance(real_images, tuple):
-            real_images = real_images[0]
+    def train_step(self, data):
+        real_images, labels = data
 
         batch_size = tf.shape(real_images)[0]
 
@@ -71,16 +70,18 @@ class WGAN(keras.Model):
                 shape=(batch_size, self.latent_dim)
             )
             with tf.GradientTape() as tape:
-                fake_images = self.generator(random_latent_vectors, training=True)
+                fake_images = self.generator(
+                    random_latent_vectors, labels, training=True
+                )
 
-                fake_logits = self.discriminator(fake_images, training=True)
-                real_logits = self.discriminator(real_images, training=True)
+                fake_logits = self.discriminator(fake_images, labels, training=True)
+                real_logits = self.discriminator(real_images, labels, training=True)
 
                 # Calculate the discriminator loss using the fake and real image logits
                 d_cost = self.d_loss_fn(real_img=real_logits, fake_img=fake_logits)
 
                 # Add the gradient penalty to the original discriminator loss
-                gp = self.gradient_penalty(batch_size, real_images, fake_images)
+                gp = self.gradient_penalty(batch_size, real_images, fake_images, labels)
                 d_loss = d_cost + gp * self.gp_weight
 
             # Get the gradients w.r.t the discriminator loss
@@ -93,9 +94,11 @@ class WGAN(keras.Model):
         # Train the generator
         random_latent_vectors = tf.random.normal(shape=(batch_size, self.latent_dim))
         with tf.GradientTape() as tape:
-            generated_images = self.generator(random_latent_vectors, training=True)
+            generated_images = self.generator(
+                random_latent_vectors, labels, training=True
+            )
 
-            gen_img_logits = self.discriminator(generated_images, training=True)
+            gen_img_logits = self.discriminator(generated_images, labels, training=True)
             # Calculate the generator loss
             g_loss = self.g_loss_fn(gen_img_logits)
 
@@ -109,15 +112,18 @@ class WGAN(keras.Model):
 
 
 class Discriminator(keras.Model):
-    def __init__(self, shape, **kwargs):
+    def __init__(self, shape, label_dim, **kwargs):
         super().__init__()
-        self.model = self.build_model()
         self.shape = shape
+        self.label_dim = label_dim
+        self.label_embedding = self.label_embedding_model()
+        self.model = self.build_model()
 
     def build_model(self):
+        input_shape = (self.shape[0], self.shape[1], self.shape[2] + 1)
         model = keras.Sequential(
             [
-                keras.Input(shape=self.shape),
+                keras.Input(shape=input_shape),
                 keras.layers.Conv2D(64, kernel_size=4, strides=2, padding="same"),
                 keras.layers.LeakyReLU(alpha=0.2),
                 keras.layers.Conv2D(128, kernel_size=4, strides=2, padding="same"),
@@ -134,20 +140,33 @@ class Discriminator(keras.Model):
         )
         return model
 
-    def call(self, inputs):
+    def label_embedding_model(self):
+        model = keras.Sequential(
+            [
+                keras.Input(shape=(self.label_dim,)),
+                keras.layers.Dense(self.shape[0] * self.shape[1]),
+                keras.layers.Reshape((self.shape[0], self.shape[1], 1)),
+            ]
+        )
+        return model
+
+    def call(self, data, labels):
+        label_embedding = self.label_embedding(labels)
+        inputs = tf.concat([data, label_embedding], axis=-1)
         return self.model(inputs)
 
 
 class Generator(keras.Model):
-    def __init__(self, latent_dim, **kwargs):
+    def __init__(self, latent_dim, label_dim, **kwargs):
         super().__init__()
         self.latent_dim = latent_dim
+        self.label_dim = label_dim
         self.model = self.build_model()
 
     def build_model(self):
         model = keras.Sequential(
             [
-                keras.Input(shape=(self.latent_dim,)),
+                keras.Input(shape=(self.latent_dim + self.label_dim,)),
                 keras.layers.Dense(2 * 2 * 256),
                 keras.layers.BatchNormalization(),
                 keras.layers.LeakyReLU(alpha=0.2),
@@ -173,5 +192,6 @@ class Generator(keras.Model):
         )
         return model
 
-    def call(self, inputs):
+    def call(self, data, labels):
+        inputs = tf.concat([data, labels], axis=1)
         return self.model(inputs)
