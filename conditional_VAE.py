@@ -36,7 +36,7 @@ class Encoder(nn.Module):
     def forward(self, x, y=None):
         z = self.encode(x)
 
-        if y is None:
+        if y == None:
             input = z
         else:
             input = torch.cat((z, y), dim=1)
@@ -48,7 +48,7 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, shape, latent_dim=16, label_dim=0):
+    def __init__(self, shape: tuple, latent_dim=16, label_dim=0):
         super(Decoder, self).__init__()
 
         c, w, h = shape
@@ -76,8 +76,8 @@ class Decoder(nn.Module):
             nn.Linear(latent_dim + label_dim, 576), nn.ReLU()
         )
 
-    def forward(self, z, y=None):
-        if y is None:
+    def forward(self, z: torch.Tensor, y=None):
+        if y == None:
             input = z
         else:
             input = torch.cat((z, y), dim=1)
@@ -89,24 +89,24 @@ class Decoder(nn.Module):
 
 
 class conditional_VAE(nn.Module):
-    def __init__(self, shape, latent_dim=16, label_dim=0):
+    def __init__(self, shape: tuple, latent_dim=16, label_dim=0):
         super(conditional_VAE, self).__init__()
 
         self.latent_dim = latent_dim
         self.encoder = Encoder(shape, latent_dim, label_dim)
         self.decoder = Decoder(shape, latent_dim, label_dim)
 
-    def sampling(self, mean, logvar):
+    def sampling(self, mean: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         eps = torch.randn(mean.shape).to(device)
         sigma = 0.5 * torch.exp(logvar)
         return mean + eps * sigma
 
-    def forward(self, x, y=None):
+    def forward(self, x: torch.Tensor, y=None):
         mean, logvar = self.encoder(x, y)
         z = self.sampling(mean, logvar)
         return self.decoder(z, y), mean, logvar
 
-    def generate(self, y=None, num_data=1):
+    def generate(self, y=None, num_data=1) -> torch.Tensor:
         z = torch.randn((num_data, self.latent_dim)).to(device)
         image = self.decoder(z, y)
 
@@ -115,7 +115,7 @@ class conditional_VAE(nn.Module):
 
 def loss_function(
     X: torch.Tensor, X_hat: torch.Tensor, mean: torch.Tensor, logvar: torch.Tensor
-):
+) -> torch.Tensor:
     MSE_loss = nn.MSELoss(reduction="sum")
     reconstruction_loss = MSE_loss(X_hat, X)
 

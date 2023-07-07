@@ -1,13 +1,14 @@
 import tensorflow as tf
 import keras.api._v2.keras as keras
+import typing
 
 
 class WGAN(keras.Model):
     def __init__(
         self,
-        discriminator,
-        generator,
-        latent_dim,
+        discriminator: keras.Model,
+        generator: keras.Model,
+        latent_dim=128,
         discriminator_extra_steps=3,
         gp_weight=10.0,
     ):
@@ -18,14 +19,26 @@ class WGAN(keras.Model):
         self.d_steps = discriminator_extra_steps
         self.gp_weight = gp_weight
 
-    def compile(self, d_optimizer, g_optimizer, d_loss_fn, g_loss_fn):
+    def compile(
+        self,
+        d_optimizer: keras.optimizers.Optimizer,
+        g_optimizer: keras.optimizers.Optimizer,
+        d_loss_fn: typing.Callable,
+        g_loss_fn: typing.Callable,
+    ):
         super().compile()
         self.d_optimizer = d_optimizer
         self.g_optimizer = g_optimizer
         self.d_loss_fn = d_loss_fn
         self.g_loss_fn = g_loss_fn
 
-    def gradient_penalty(self, batch_size, real_images, fake_images, labels):
+    def gradient_penalty(
+        self,
+        batch_size: int,
+        real_images: tf.Tensor,
+        fake_images: tf.Tensor,
+        labels: tf.Tensor,
+    ) -> tf.Tensor:
         """Calculates the gradient penalty.
 
         This loss is calculated on an interpolated image
@@ -48,7 +61,7 @@ class WGAN(keras.Model):
         gp = tf.reduce_mean((norm - 1.0) ** 2)
         return gp
 
-    def train_step(self, data):
+    def train_step(self, data: tuple[tf.Tensor, tf.Tensor]):
         real_images, labels = data
 
         batch_size = tf.shape(real_images)[0]
@@ -112,7 +125,7 @@ class WGAN(keras.Model):
 
 
 class Discriminator(keras.Model):
-    def __init__(self, shape, label_dim, **kwargs):
+    def __init__(self, shape: tuple, label_dim: int, **kwargs):
         super().__init__()
         self.shape = shape
         self.label_dim = label_dim
@@ -150,14 +163,14 @@ class Discriminator(keras.Model):
         )
         return model
 
-    def call(self, data, labels):
+    def call(self, data: tf.Tensor, labels: tf.Tensor):
         label_embedding = self.label_embedding(labels)
         inputs = tf.concat([data, label_embedding], axis=-1)
         return self.model(inputs)
 
 
 class Generator(keras.Model):
-    def __init__(self, latent_dim, label_dim, **kwargs):
+    def __init__(self, latent_dim: int, label_dim: int, **kwargs):
         super().__init__()
         self.latent_dim = latent_dim
         self.label_dim = label_dim
@@ -192,6 +205,6 @@ class Generator(keras.Model):
         )
         return model
 
-    def call(self, data, labels):
+    def call(self, data: tf.Tensor, labels: tf.Tensor):
         inputs = tf.concat([data, labels], axis=1)
         return self.model(inputs)
